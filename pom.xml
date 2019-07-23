@@ -1,0 +1,179 @@
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/maven-v4_0_0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <groupId>com.smartcodeltd</groupId>
+    <artifactId>simple-webapp</artifactId>
+    <packaging>war</packaging>
+    <version>1.2.3-SNAPSHOT</version>
+    <name>simple-webapp Maven Webapp</name>
+    <url>http://maven.apache.org</url>
+
+    <properties>
+        <semanticVersion>
+            ${parsedVersion.majorVersion}.${parsedVersion.minorVersion}.${parsedVersion.incrementalVersion}
+        </semanticVersion>
+        <buildVersion>+build</buildVersion>
+
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
+    </properties>
+
+    <build>
+        <finalName>simple-webapp</finalName>
+
+        <plugins>
+            <plugin>
+                <groupId>org.codehaus.mojo</groupId>
+                <artifactId>build-helper-maven-plugin</artifactId>
+                <version>1.7</version>
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>parse-version</goal>
+                            <goal>maven-version</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-war-plugin</artifactId>
+                <version>2.3</version>
+
+                <configuration>
+                    <archive>
+                        <manifest>
+                            <addClasspath>true</addClasspath>
+                        </manifest>
+                        <manifestEntries>
+                            <Build-Version>${semanticVersion}${buildVersion}</Build-Version>
+                            <Build-Qualifier>${parsedVersion.qualifier}</Build-Qualifier>
+                            <Build-Time>${maven.build.timestamp}</Build-Time>
+                            <Build-User>${user.name}</Build-User>
+                            <Build-Maven>Maven ${maven.version}</Build-Maven>
+                            <Build-Java>${java.version}</Build-Java>
+                            <Build-OS>${os.name}</Build-OS>
+                            <Build-Label>${project.version}</Build-Label>
+                            <Build-Path>${basedir}</Build-Path>
+                        </manifestEntries>
+                    </archive>
+                </configuration>
+
+                <executions>
+                    <!--
+                        Currently, the replacer plugin needs access to a target resource before it is packaged into an archive.
+                        However, standard WAR packaging does not expose web resources (anything under src/main/webapp)
+                        for use in other plugins and runs as a single execution. Fortunately, we can invoke war:exploded
+                        to copy these resources earlier in the build lifecycle so that they can be used by the maven-replacer-plugin.
+                        The standard package usage will then use the modified web resources when creating the WAR artifact.
+
+                        https://code.google.com/p/maven-replacer-plugin/wiki/UsageWithOtherPlugins
+                    -->
+                    <execution>
+                        <id>prepare-war</id>
+                        <phase>prepare-package</phase>
+                        <goals>
+                            <goal>exploded</goal>
+                        </goals>
+                    </execution>
+                    <execution>
+                        <id>default-war</id>
+                        <phase>package</phase>
+                        <goals>
+                            <goal>war</goal>
+                        </goals>
+                        <configuration>
+                            <warSourceDirectory>${project.build.directory}/${project.build.finalName}</warSourceDirectory>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+
+            <!-- Replace any occurrence of %VERSION_NUMBER% with the actual version string -->
+            <plugin>
+                <groupId>com.google.code.maven-replacer-plugin</groupId>
+                <artifactId>replacer</artifactId>
+                <version>1.5.2</version>
+                <executions>
+                    <execution>
+                        <phase>prepare-package</phase>
+                        <goals>
+                            <goal>replace</goal>
+                        </goals>
+                    </execution>
+                </executions>
+                <configuration>
+                    <!--
+                        filesToInclude doesn't resolve ${project.build.directory}
+                        I'm using <basedir /> to avoid hard-coding "target"
+                    -->
+                    <basedir>${project.build.directory}</basedir>
+                    <filesToInclude>${project.build.finalName}/**/*.jsp</filesToInclude>
+                    <replacements>
+                        <replacement>
+                            <token>%VERSION_NUMBER%</token>
+                            <value>${semanticVersion}${buildVersion}</value>
+                        </replacement>
+                    </replacements>
+                </configuration>
+            </plugin>
+
+            <!-- Make sure that the buildVersion and semanticVersion arguments are valid -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-enforcer-plugin</artifactId>
+                <version>1.2</version>
+                <executions>
+                    <execution>
+                        <id>enforce-property</id>
+                        <goals>
+                            <goal>enforce</goal>
+                        </goals>
+                        <configuration>
+                            <rules>
+                                <requireProperty>
+                                    <property>semanticVersion</property>
+                                    <message>Please set the semanticVersion property, such as "1.0.0"</message>
+                                    <regex>^((\d+)\.(\d+)\.(\d+))$</regex>
+                                    <regexMessage>
+    semanticVersion property [${semanticVersion}] should follow semantic versioning rules as outlined at http://semver.org/
+    For example:
+      1.2.0
+                                    </regexMessage>
+                                </requireProperty>
+                                <requireProperty>
+                                    <property>buildVersion</property>
+                                    <message>Please set the buildVersion property, such as "+build.1"</message>
+                                    <regex>
+                                        ^(?:-([\dA-Za-z\-]+(?:\.[\dA-Za-z\-]+)*))?(?:\+([\dA-Za-z\-]+(?:\.[\dA-Za-z\-]+)*))?$
+                                    </regex>
+                                    <regexMessage>
+    buildVersion property [${buildVersion}] should follow semantic versioning rules as outlined at http://semver.org/
+    For example:
+      -rc.1
+      -rc.1+build
+      -rc.1+build.1
+      +build
+      +build.69
+      +build.69.b8f12d7
+                                    </regexMessage>
+                                </requireProperty>
+                            </rules>
+                            <fail>true</fail>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+
+    <dependencies>
+        <dependency>
+            <groupId>junit</groupId>
+            <artifactId>junit</artifactId>
+            <version>4.11</version>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+</project>
